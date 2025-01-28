@@ -21,6 +21,10 @@ module.exports = defineConfig({
           {
             resolve: "./src/modules/sendcloud",
             id: "sendcloud",
+            options: {
+              public_key: process.env.SENDCLOUD_PUBLIC_KEY,
+              secret_key: process.env.SENDCLOUD_SECRET_KEY
+            }
           },
           {
             resolve: "@medusajs/medusa/fulfillment-manual",

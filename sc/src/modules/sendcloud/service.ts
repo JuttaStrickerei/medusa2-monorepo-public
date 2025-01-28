@@ -1,22 +1,45 @@
 import { 
     AbstractFulfillmentProviderService
   } from "@medusajs/framework/utils"
+
   import { 
     FulfillmentItemDTO,
     FulfillmentOrderDTO,
     CreateFulfillmentResult
   } from "@medusajs/framework/types"
 
+  import { SendcloudClient } from "./client"
+
+
   export type SendcloudOptions = {
-    api_key: string
+    public_key: string
+    secret_key: string
   }
   
   class SendcloudFulfillmentProviderService extends AbstractFulfillmentProviderService {
     static identifier = "sendcloud"
+    protected client_: SendcloudClient
+    protected options_: SendcloudOptions
   
-    constructor(container, options) {
+    constructor(container, options: SendcloudOptions) {
       super()
-      console.log("Sendcloud provider initialized!", { options })
+      console.log("Sendcloud options received:", {
+        public_key: options.public_key,
+        secret_key: options.secret_key?.slice(0, 4) + "..." // Only log first 4 chars for security
+      })
+      
+      this.options_ = options
+      this.client_ = new SendcloudClient(options)
+      
+      // Test the connection when initializing
+      this.client_.testConnection()
+        .then((success) => {
+          if (success) {
+            console.log("Successfully connected to Sendcloud")
+          } else {
+            console.error("Failed to connect to Sendcloud")
+          }
+        })
     }
   
     async getFulfillmentOptions(): Promise<any[]> {
