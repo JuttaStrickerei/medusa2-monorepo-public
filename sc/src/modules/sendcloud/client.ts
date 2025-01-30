@@ -1,5 +1,6 @@
 import { MedusaError } from "@medusajs/framework/utils"
 import { SendcloudOptions } from "./service"
+import { SendcloudShippingMethodsResponse } from "./types"
 
 export class SendcloudClient {
   private baseUrl = "https://panel.sendcloud.sc/api/v2"
@@ -13,25 +14,15 @@ export class SendcloudClient {
       )
     }
 
-    console.log("\nInitializing Sendcloud client with credentials:")
-    console.log("Public Key:", options.public_key)
-    console.log("Secret Key (first 4 chars):", options.secret_key.substring(0, 4))
-    
-    // Let's try both ways of creating the auth token to compare
-    const manualAuth = Buffer.from(
+    // Initialize auth token
+    this.auth = Buffer.from(
       `${options.public_key}:${options.secret_key}`
     ).toString('base64')
-    console.log("Manual auth generation:", manualAuth)
-    
-    // Try standard way
-    const btoa = (str: string) => Buffer.from(str).toString('base64')
-    const standardAuth = btoa(`${options.public_key}:${options.secret_key}`)
-    console.log("Standard auth generation:", standardAuth)
-    
-    this.auth = standardAuth
-    
-    // Verify by decoding
-    console.log("Decoded auth (should match credentials):", Buffer.from(this.auth, 'base64').toString())
+
+    // Log initialization only in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log("Sendcloud client initialized")
+    }
   }
 
   private async sendRequest<T>(
@@ -39,24 +30,11 @@ export class SendcloudClient {
     options?: RequestInit
   ): Promise<T> {
     try {
-      console.log(`\nSending request to ${this.baseUrl}${endpoint}`)
-      
       const headers = {
         "Authorization": `Basic ${this.auth}`,
         "Content-Type": "application/json",
         "Accept": "application/json",
         "X-Requested-With": ""
-      }
-      
-      console.log("\nRequest details:")
-      console.log("Full URL:", `${this.baseUrl}${endpoint}`)
-      console.log("Method:", options?.method || 'GET')
-      console.log("Headers:", {
-        ...headers,
-        "Authorization": "Basic " + this.auth.substring(0, 10) + "..." // Only show part of auth
-      })
-      if (options?.body) {
-        console.log("Body:", options.body)
       }
 
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
@@ -64,51 +42,66 @@ export class SendcloudClient {
         headers
       })
 
-      console.log("\nResponse details:")
-      console.log("Status:", response.status)
-      console.log("Status Text:", response.statusText)
-      
       const responseText = await response.text()
-      console.log("Raw Response:", responseText)
 
       if (!response.ok) {
+        let errorMessage: string
         try {
           const error = JSON.parse(responseText)
-          console.error("\nParsed error response:", error)
-          throw new MedusaError(
-            MedusaError.Types.INVALID_DATA,
-            `Sendcloud API error: ${JSON.stringify(error)}`
-          )
-        } catch (e) {
-          throw new MedusaError(
-            MedusaError.Types.INVALID_DATA,
-            `Sendcloud API error: ${responseText}`
-          )
+          errorMessage = `Sendcloud API error: ${JSON.stringify(error)}`
+        } catch {
+          errorMessage = `Sendcloud API error: ${responseText}`
         }
+
+        throw new MedusaError(
+          MedusaError.Types.INVALID_DATA,
+          errorMessage
+        )
       }
 
-      const responseData = JSON.parse(responseText)
-      console.log("\nParsed successful response:", responseData)
-      return responseData
+      return JSON.parse(responseText)
     } catch (error) {
-      console.error("\nRequest failed:", error)
-      throw error
+      if (error instanceof MedusaError) {
+        throw error
+      }
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `Error contacting Sendcloud API: ${error.message}`
+      )
     }
   }
 
   async testConnection(): Promise<boolean> {
     try {
-      console.log("\nTesting Sendcloud connection...")
-      await this.sendRequest("/shipping_methods")
+      await this.getShippingMethods()
       return true
     } catch (error) {
-      console.error("\nConnection test failed:", error.message)
       return false
     }
   }
 
-  // Future methods for actual Sendcloud operations will go here
-  // Example:
-  // async getShippingMethods(): Promise<any> { ... }
-  // async createParcel(data: any): Promise<any> { ... }
+  /**
+   * Retrieves available shipping methods from Sendcloud.
+   * @param params Optional parameters to filter shipping methods
+   * @returns Promise<SendcloudShippingMethodsResponse>
+   */
+  async getShippingMethods(params?: { 
+    to_country?: string, 
+    from_country?: string 
+  }): Promise<SendcloudShippingMethodsResponse> {
+    const queryParams = new URLSearchParams()
+    
+    if (params?.to_country) {
+      queryParams.append('to_country', params.to_country)
+    }
+    if (params?.from_country) {
+      queryParams.append('from_country', params.from_country)
+    }
+
+    const endpoint = `/shipping_methods${
+      queryParams.toString() ? '?' + queryParams.toString() : ''
+    }`
+    
+    return await this.sendRequest<SendcloudShippingMethodsResponse>(endpoint)
+  }
 }
